@@ -16,8 +16,6 @@ export let CONFIG: Config;
 
 export async function loadConfig() {
   CONFIG = await loadJSON('config.json') as Config;
-  console.log("Loaded config")
-  console.log(CONFIG)
   CONFIG.dev_mode = getUrlParams()['devmode'] === true;
 }
 

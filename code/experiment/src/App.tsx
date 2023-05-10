@@ -36,6 +36,7 @@ export default class App extends React.Component<any, any> {
       studyId: urlParams['STUDY_ID'],
       sessionId: urlParams['SESSION_ID']
     }
+    console.log("Loading data");
     this.data = new Data(sessionParams, await getNewExperimentData(sessionParams.prolificPid));
     if (CONFIG.dev_mode) {
       for (let [key, value] of Object.entries(urlParams)) {
@@ -50,6 +51,7 @@ export default class App extends React.Component<any, any> {
 
     await this.data.post(true);
     this.setState({dataLoaded: true});
+    console.log(this.data);
   }
 
   render() {
