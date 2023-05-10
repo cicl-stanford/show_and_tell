@@ -1,0 +1,29 @@
+.circle {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  border: 2px solid black;
+  display: inline-block;
+}
+
+.p-column-header-content {
+  display: inline-block !important;
+}
+
+th {
+  padding: 2px 6px 2px 6px !important;
+  text-align: center !important;
+}
+td {
+  padding: 4px 6px 4px 6px !important;
+  line-height: 120%;
+}
+
+td .day {
+  text-align: center !important;
+}
+
+.explanation {
+  text-align: justify;
+  font-size: 14px;
+}

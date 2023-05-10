@@ -1,0 +1,1 @@
+{"experiment_name": "exp1", "host_url": "localhost", "flask_port": 5001, "react_port": 3000, "post_data_interval": 60000, "completion_code": "CJETWGMX", "appx_duration": 25, "base_reward": 4.15, "reward_per_edge": 0.03, "num_observations": 10, "p_root": 0.5, "p_nonroot": 0.1, "p_edge": 0.9}

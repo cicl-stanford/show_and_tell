@@ -1,0 +1,34 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+p {
+  text-align: justify;
+}
+
+h1 {
+  padding-top: 12px;
+  padding-bottom: 25px;
+}
+
+.App {
+  text-align: center;
+  width: 1000px;
+  background: lightyellow;
+  margin: 50px auto;
+  position: relative;
+  padding: 25px;
+  padding-left: 50px;
+  padding-right: 50px;
+  line-height: 150%;
+}
+
+.vertical-center {
+  margin: 0;
+  display: inline-block;
+  position: relative;
+  top: 50%;
+  transform: translateY(-50%);
+}

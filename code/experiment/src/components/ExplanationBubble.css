@@ -1,0 +1,40 @@
+.col-2 {
+  padding: 0;
+}
+
+.speech-bubble {
+  display: inline-block;
+  margin-top: 12px;
+  background: #2f6ef6;
+  padding: 14px;
+  text-align: left;
+  font-weight: 700;
+  color: #fff;
+  position:relative;
+}
+
+.sb-left:before {
+  content: "";
+  width: 0px;
+  height: 0px;
+  position: absolute;
+  border-right: 10px solid #2f6ef6;
+  border-left: 10px solid transparent;
+  border-top: 10px solid #2f6ef6;
+  border-bottom: 10px solid transparent;
+  left: -20px;
+  top: 6px;
+}
+
+.sb-right:after {
+  content: "";
+  width: 0px;
+  height: 0px;
+  position: absolute;
+  border-left: 10px solid #2f6ef6;
+  border-right: 10px solid transparent;
+  border-top: 10px solid #2f6ef6;
+  border-bottom: 10px solid transparent;
+  right: -20px;
+  top: 6px;
+}
