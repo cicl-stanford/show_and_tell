@@ -1,0 +1,836 @@
+---
+title: "main"
+author: "Andrew Nam"
+output: html_document
+date: "01/22/2023"
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+# these options here change the formatting of how comments are rendered
+knitr::opts_chunk$set(collapse = TRUE,
+                      comment = "#>",
+                      results = "hold",
+                      fig.show = "hold")
+
+# Clear any existing variables
+rm(list = ls())
+```
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(ggthemes)
+library(furrr)  # parallelization support for map
+library(ggsignif)
+library(emmeans)
+library(lmerTest)
+library(brms)
+library(MuMIn)
+library(broom)
+library(broom.mixed)
+library(latex2exp)
+library(png)
+library(egg)          # for geom_custom
+library(grid)         # functions for dealing with images 
+library(magick)  # image processing
+library(patchwork)
+
+
+source("theme_publication.R")
+theme_set(theme_Publication())
+conditionPalette = c("#F8766D", "#00A9FF", "#C77CFF")
+miscPalette = c("#FF781F", "#00BA38")
+plan(multisession, workers = 8)  # number of cores to use
+```
+
+# Load data
+
+```{r}
+df_subjects = read_tsv("../../data/tables/df_subjects.tsv") %>% 
+  clean_names()
+df_demographics = read_tsv("../../data/tables/df_demographics.tsv") %>% 
+  clean_names()
+df_timestamps = read_tsv("../../data/tables/df_timestamps.tsv")%>% 
+  clean_names()
+df_trials = read_tsv("../../data/tables/df_trials.tsv") %>% 
+  clean_names()
+df_graphs = read_tsv("../../data/tables/df_graphs.tsv") %>% 
+  clean_names()
+df_posteriors = read_tsv("../../data/tables/df_posteriors.tsv") %>% 
+  clean_names() %>% 
+  mutate(edge = tolower(edge))
+df_optimal = read_tsv("../../data/tables/df_optimal.tsv") %>% 
+  clean_names()
+df_model_graphs = read_tsv("../../data/tables/model_graphs.tsv") %>% 
+  clean_names()
+df_model_asymptote = read_tsv("../../data/tables/model_asymptote.tsv") %>% 
+  clean_names()
+
+# Device figures
+df_images = df_graphs %>% 
+  select(graph_type) %>% 
+  distinct() %>% 
+  mutate(img = map(.x = graph_type,
+                   .f = ~ readPNG(str_glue("../../figures/experiment/device_types/{.x}.png"))),
+         graph_type = factor(graph_type, c('separate', 'pair', 'line',
+                                           'common_cause', 'common_effect', 'skip')),
+         # condition doesn't really exist, but it bugs out during plotting if not included
+         condition = 'Observation Only',
+         condition = condition %>% 
+           factor(c('Observation Only', 'Explanation Only', 'Observation + Explanation')),
+         name = case_when(graph_type == 'separate' ~ 'Separate',
+                          graph_type == 'pair' ~ 'Pair',
+                          graph_type == 'line' ~ 'Chain',
+                          graph_type == 'common_cause' ~ 'Common Cause',
+                          graph_type == 'common_effect' ~ 'Common Effect',
+                          graph_type == 'skip' ~ 'Skip',
+                          T ~ 'NA')) %>% 
+  arrange(graph_type)
+```
+
+## Wrangle data
+
+### Demographics
+```{r}
+df_demographics = df_subjects %>% 
+  filter(completed) %>% 
+  select(pid) %>% 
+  left_join(df_demographics) %>% 
+  mutate(across(is.character, ~ case_when(.x == 'DATA_EXPIRED' ~ as.character(NA),
+                                          T ~ .x)),
+         age = as.numeric(age))
+```
+
+### Explanations
+```{r}
+df_explanations = df_trials %>% 
+  select(pid, graph_type, obs_index,
+         xnode1 = explanation_node1,
+         xnode2 = explanation_node2,
+         xactive = explanation_nodes_active,
+         xcause = explanation_cause) %>% 
+  mutate(obs_index = 1 + obs_index,
+         xforward = xnode1 < xnode2,
+         xedge = ifelse(xforward, str_glue("{xnode1}{xnode2}"), str_glue("{xnode2}{xnode1}")),
+         xedge = tolower(xedge)) 
+```
+
+
+### Responses
+```{r}
+df_responses = df_subjects %>% 
+  filter(completed) %>% 
+  select(pid, condition) %>% 
+  left_join(df_trials) %>% 
+  select(pid, condition, graph_type, obs_index,
+         response_ab = edge_ab_response,
+         response_ac = edge_ac_response,
+         response_bc = edge_bc_response) %>% 
+  pivot_longer(starts_with('response'),
+               names_to = 'edge',
+               values_to = 'human',
+               names_prefix = 'response_')
+
+# df_optimal; only keep ones corresponding to participants in df_subjects
+df_responses = df_subjects %>% 
+  filter(completed) %>% 
+  select(pid) %>% 
+  left_join(df_optimal) %>% 
+  mutate(edge = tolower(edge)) %>% 
+  select(pid, graph_type, obs_index, edge, model = response_sample) %>% 
+  inner_join(df_responses, .)
+
+df_responses = df_graphs %>% 
+  pivot_longer(c(ab, ac, bc),
+               names_to = 'edge',
+               values_to = 'actual') %>% 
+  left_join(df_responses, .)
+
+df_responses = df_responses %>%
+  pivot_longer(c(human, model),
+               names_to = 'source',
+               values_to = 'response') %>% 
+  mutate(obs_index = obs_index + 1,
+         correct = response == actual,
+         graph_type = factor(graph_type, c('separate', 'pair', 'line',
+                                           'common_cause', 'common_effect', 'skip')))
+```
+
+# About participants
+
+## Number of participants in each condition
+
+```{r}
+df_subjects %>% 
+  filter(completed) %>% 
+  group_by(condition) %>% 
+  count()
+```
+
+## Demographics
+
+### Age
+```{r}
+df_demographics %>% 
+  summarize(mean = mean(age, na.rm=T),
+            sd = sd(age, na.rm=T))
+```
+
+### Gender
+```{r}
+df_demographics %>% 
+  group_by(sex) %>% 
+  count()
+```
+
+### Race
+```{r}
+df_demographics %>% 
+  group_by(ethnicity_simplified) %>% 
+  count()
+```
+
+# Main plot
+```{r}
+df_formatted = df_responses %>%
+  mutate(condition = case_when(condition == 'activations' ~ 'Observation Only',
+                               condition == 'explanations' ~ 'Explanation Only',
+                               T ~ 'Observation + Explanation') %>% 
+           factor(c('Observation Only', 'Explanation Only', 'Observation + Explanation')),
+         correct = as.numeric(correct))
+
+df_asymptote = df_images %>% 
+  select(condition, graph_type) %>% 
+  mutate(asymptote = c(1, 5/6, 2/3, 2/3, 1, 1/2))
+df_asymptote = df_asymptote %>% 
+  select(graph_type) %>% 
+  crossing(condition = c("Explanation Only", "Observation + Explanation"),
+           asymptote = 1) %>% 
+  rbind(df_asymptote) %>% 
+  mutate(condition = condition %>% 
+           factor(c('Observation Only', 'Explanation Only', 'Observation + Explanation')))
+```
+
+## Average accuracy
+
+```{r}
+df = df_formatted %>% 
+  group_by(pid, source, condition, graph_type) %>% 
+  summarize(accuracy = mean(correct))
+
+p1 = df %>%
+  filter(source == 'human') %>% 
+  ggplot(aes(x = condition, y = accuracy, fill = condition)) +
+  facet_grid(cols = vars(graph_type)) + 
+  geom_point(data = df_asymptote,
+             aes(y = asymptote),
+             shape = 23,
+             color = 'black',
+             size = 2.5) +
+  stat_summary(fun = "mean",
+               geom = "bar",
+               color = "black",
+               alpha = 0.75) +
+  geom_point(alpha = 0.25,
+             shape = 21,
+             position = position_jitter(width = .2, height = 0),
+             size = .65) +
+  stat_summary(data = df %>%
+                 filter(source == 'model'),
+               fun.data = "mean_cl_boot",
+               shape = 21,
+               size = .6,
+               stroke = .5,
+               geom = "pointrange") +
+  stat_summary(fun.data = "mean_cl_boot",
+               size = .5,
+               geom = "linerange",
+               color = 'black',
+               alpha = .75) +
+  geom_hline(yintercept = 1/3,
+             linetype='dashed') +
+  geom_custom(data = df_images,
+              mapping = aes(data = img,
+                            x = 1.25,
+                            y = 1.1),
+              grob_fun = function(x) rasterGrob(x,
+                                                interpolate = T,
+                                                vjust = 0,
+                                                hjust = 0,
+                                                height = .4)) +
+  geom_text(data = df_images,
+            mapping = aes(label = name),
+            x = 2,
+            y = 1.7,
+            color = 'black') +
+  scale_y_continuous(breaks = seq(0, 1, .25),
+                     labels = scales::percent) +
+  coord_cartesian(clip = "off",
+                  ylim = c(0, 1.1)) +
+  scale_fill_manual(name="", 
+                    values=conditionPalette) +
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.line.x = element_blank(),
+        strip.text = element_blank(),
+        panel.spacing.y = unit(1.3, "cm"),
+        plot.margin = margin(t = 1.6, l = .2, r = .2, unit = "cm"),
+        panel.grid.major.x = element_blank(),
+        legend.position = 'none') +
+  labs(x = element_blank(),
+       y = 'Accuracy')
+p1
+```
+
+## Accuracy over time
+
+```{r}
+p2 = df_formatted %>% 
+  mutate(source = ifelse(source == 'human', 'Human', 'Model')) %>% 
+  ggplot(aes(x = obs_index,
+             y = correct,
+             color = condition,
+             shape = source,
+             group = interaction(condition, source))) +
+  stat_summary(aes(linetype = source),
+               fun = "mean",
+               geom = "line",
+               show.legend = FALSE) +
+  stat_summary(fun = "mean",
+               geom = "point") +
+  geom_hline(yintercept = 1/3,
+             linetype='dashed') +
+  geom_point(aes(shape = 'Asymptote'),
+             x = 0, y = 0,
+             alpha = 0) +
+  scale_shape_manual(values = c(16, 17, 18),
+                     breaks = c('Human', 'Model', 'Asymptote')) +
+  coord_cartesian(ylim = c(0, 1), clip = 'off') +
+  labs(x = 'Trial', y = 'Accuracy', color = "", shape="") +
+  guides(colour = guide_legend(order=1),
+         shape = guide_legend(order=2)) +
+  scale_x_continuous(breaks = seq(2, 10, 2)) +
+  scale_y_continuous(breaks = seq(0, 1, .25),
+                     labels = scales::percent) +
+  scale_color_manual(name="", 
+                     values=conditionPalette) +
+  theme(legend.position = 'bottom',
+        strip.text = element_blank(),
+        plot.margin = margin(t = 0, l = .2, r = .2,  unit = "cm")) +
+  facet_grid(cols = vars(graph_type))
+p2
+```
+
+## Knit
+```{r}
+p1 / p2 + plot_annotation(tag_levels = 'A')
+
+ggsave('../../figures/main.png', width = 8, height = 4.5, scale = 1.25)
+```
+
+# Accuracy over time
+
+```{r}
+brm_aot_human = df_responses %>% 
+  filter(source == 'human') %>% 
+  mutate(correct = as.numeric(correct)) %>% 
+  brm(correct ~ condition:obs_index + (1 | pid),
+      family = 'bernoulli',
+      cores = 4,
+      seed = 0,
+      file = 'brm/brm_aot_human',
+      # file_refit = "on_change",
+      data = .)
+
+brm_aot_model = df_responses %>% 
+  filter(source == 'model') %>% 
+  mutate(correct = as.numeric(correct)) %>% 
+  brm(correct ~ condition:obs_index + (1 | pid),
+      family = 'bernoulli',
+      cores = 4,
+      seed = 0,
+      file = 'brm/brm_aot_model',
+      # file_refit = "on_change",
+      data = .)
+```
+
+```{r}
+df = df_responses %>% 
+  select(pid, condition) %>% 
+  distinct() %>% 
+  crossing(obs_index = c(0, 10)) 
+
+df = predict(brm_aot_model, newdata = df) %>% 
+  as_tibble() %>% 
+  cbind(df, .)
+
+df %>% 
+  filter(obs_index == 0) %>%
+  summarize(estimate = mean(Estimate),
+            ci_low = quantile(Estimate, .025),
+            ci_high = quantile(Estimate, .975)) %>% 
+  ungroup() %>% 
+  mutate(across(is.numeric, ~round(.x, 3)))
+
+df %>% 
+  filter(obs_index == 10) %>% 
+  group_by(condition, obs_index) %>% 
+  summarize(estimate = mean(Estimate),
+            ci_low = quantile(Estimate, .025),
+            ci_high = quantile(Estimate, .975)) %>% 
+  ungroup() %>% 
+  mutate(across(is.numeric, ~round(.x, 3)))
+```
+
+
+# Overall Accuracy
+
+## Conditions only
+
+### Humans
+```{r}
+df_responses %>% 
+  filter(source == 'human') %>% 
+  glmer(correct ~ condition + (1 | pid), family = 'binomial', data = .) %>% 
+  emmeans(specs = pairwise ~ condition,
+          adjust = "none")
+```
+
+### Model
+```{r}
+df_responses %>% 
+  filter(source == 'model') %>% 
+  glmer(correct ~ condition + (1 | pid), family = 'binomial', data = .) %>% 
+  emmeans(specs = pairwise ~ condition,
+          adjust = "none")
+```
+
+## Conditions + graph types
+
+Note: This analysis was not formally included in the manuscript, but it is visualized
+in the main plot. This just provides precise numbers for the figure.
+
+Notes about these results
+1. The only contrast (out of 3 conditions x 6 devices = 18 possible) that isn't 
+significant in the model is between observations-only and explanations-only in the 
+separate graph. All other 17 are predicted to be significant.
+2. The difference between explanation-only and both is never significant in humans for 
+any of the 6 devices. Does this suggest that humans are treating BOTH as primarily
+explanation only?
+3. For humans, none of the 3 conditions are significantly different from each other for
+the separate device.
+
+```{r}
+df_contrasts = df_responses %>% 
+  group_by(source, graph_type) %>% 
+  nest() %>% 
+  mutate(df = map(.x = data,
+                  .f = ~ (glmer(correct ~ condition + (1 | pid),
+                                family = 'binomial',
+                                data = .x) %>% 
+                            emmeans(specs = pairwise ~ condition,
+                                    adjust = "none"))$contrasts %>% 
+                    tidy())) %>% 
+  select(-data) %>% 
+  unnest() %>% 
+  select(source, graph_type, contrast, estimate, std.error, statistic, p.value) %>% 
+  mutate(across(is.numeric, ~round(.x, 4)))
+
+df_contrasts %>% 
+  view()
+```
+
+
+# Comparing models for both condition
+
+Using the data from participants from the 'both' condition, how well does the model
+account for the data when it's given observations and explanations (as was presented
+to the participants) or when it's given only explanations?
+
+Limitations
+
+1. Since the model often reaches very low posterior probability (almost 0), if a participant
+ever makes that response, the log-likelihood will drop significantly. Since the model will
+converge faster given both observations and explanations, this will be a bigger effect for
+the 'both' model than the 'explanations only' model.
+This is an issue since even a single accidental response from a participant can strongly
+favor the 'explanation only' model.
+
+2. Comparing LLH in this way assumes that people maintain beliefs about the edges that
+approximate the model posteriors.
+
+```{r}
+epsilon = 1e-9
+
+df_llh = df_responses %>% 
+  filter(condition == 'both') %>% 
+  select(pid, source, graph_type, obs_index, edge, response)
+
+df_llh = df_posteriors %>% 
+  pivot_longer(starts_with('p_'),
+               names_to = 'response',
+               values_to = 'probability',
+               names_prefix = 'p_') %>% 
+  right_join(df_llh) %>% 
+  mutate(probability = ifelse(probability <= epsilon, epsilon, probability),
+         logp = log10(probability)) %>% 
+  group_by(source, pid, condition, graph_type) %>% 
+  summarize(logp = sum(logp)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = condition,
+              values_from = logp)
+
+df_llh %>% 
+  group_by(source, graph_type) %>% 
+  summarize_all(sum)
+```
+
+```{r}
+# How many participants were favored by the explanation-only model compared to both?
+df_llh %>% 
+  group_by(source, pid) %>% 
+  summarize(both = sum(both),
+            explanations_only = sum(explanations_only)) %>% 
+  mutate(favor_both = both > explanations_only) %>% 
+  group_by(source, favor_both) %>% 
+  summarize(n = n()) %>% 
+  mutate(frac = round(n / sum(n), 4)) %>% 
+  arrange(favor_both)
+
+# How many participants were favored by the explanation-only model compared to both for
+# each graph type?
+df_llh %>% 
+  mutate(favor_both = both > explanations_only) %>% 
+  group_by(source, graph_type, favor_both) %>% 
+  summarize(n = n()) %>% 
+  mutate(frac = round(n / sum(n), 4)) %>% 
+  filter(favor_both) %>% 
+  arrange(source, frac)
+```
+
+
+```{r}
+df_llh %>% 
+  filter(source == 'human') %>% 
+  mutate(x = both - explanations_only,
+         favor_both = x > 0) %>% 
+  ggplot(aes(x = x)) +
+  geom_histogram(aes(color = favor_both), boundary = 0) +
+  # ggplot(aes(x = ba, y = be)) +
+  # geom_point(alpha = .2) +
+  # geom_abline(slope = 1) +
+  facet_wrap(vars(graph_type)) +
+  labs(x = "log10 odds-ratio")
+```
+
+
+
+
+# Edge changes
+
+How often are edge changes made for each condition?
+If an edge change is made, how often is it
+incorrect -> correct
+incorrect -> incorrect
+correct -> incorrect
+
+```{r}
+num_sims = 2000
+
+df = df_responses %>% 
+  filter(source == 'human') %>% 
+  group_by(pid, graph_type, edge) %>% 
+  arrange(obs_index) %>% 
+  mutate(prev = lag(response, default = 'none')) %>% 
+  ungroup() %>% 
+  mutate(prev_correct = prev == actual,
+         change = response != prev,
+         c2i = prev_correct & !correct,
+         i2c = !prev_correct & correct,
+         i2i = change & !prev_correct & !correct) %>% 
+  pivot_longer(c(c2i, i2c),
+               names_to = 'change_type',
+               values_to = 'changed')
+
+df_edge_changes = tibble(sim = 1:2000) %>% 
+  mutate(data = future_map(sim, 
+                           ~ df %>% 
+                             group_by(condition, change_type) %>% 
+                             sample_frac(1, replace=TRUE) %>% 
+                             summarize(changed = mean(changed), .groups = 'drop') %>% 
+                             pivot_wider(names_from = change_type,
+                                         values_from = changed) %>% 
+                             mutate(diff = i2c - c2i),
+                           .options = furrr_options(seed = T),
+                           .progress = T)) %>% 
+  unnest() 
+
+df_edge_changes %>% 
+  pivot_longer(c(c2i, i2c, diff),
+               names_to = 'metric') %>% 
+  group_by(condition, metric) %>% 
+  summarize(estimate = mean(value),
+            ci_low = quantile(value, .025),
+            ci_high = quantile(value, .975)) %>% 
+  mutate(across(is.numeric, ~ round(.x, 4))) %>% 
+  filter(metric != 'diff') %>% 
+  mutate(condition =  case_when(condition == 'activations' ~ 'Observation Only',
+                               condition == 'explanations' ~ 'Explanation Only',
+                               T ~ 'Observation + Explanation') %>% 
+           factor(c('Observation Only', 'Explanation Only', 'Observation + Explanation')),
+         metric = ifelse(metric == 'c2i', 'Correct to Incorrect', 'Incorrect to Correct')) %>% 
+  ggplot(aes(x = metric, y = estimate, fill = condition)) +
+  geom_bar(stat = 'identity',
+           position = position_dodge(width = .9),
+           color = 'black',
+           alpha = .75) +
+  geom_errorbar(aes(ymin=ci_low, ymax=ci_high),
+                width=0,
+                position=position_dodge(.9)) + 
+  scale_fill_manual(name="", 
+                    values=conditionPalette) +
+  scale_y_continuous(breaks = seq(0, 0.1, .025),
+                     labels = scales::percent) +
+  labs(x = element_blank(),
+       y = "Proportion of Responses") +
+  theme(legend.title = element_blank(),
+        panel.grid.major.x = element_blank())
+
+ggsave("../../figures/edge_changes.png", width = 6, height = 4, scale = 1)
+```
+
+
+```{r}
+df = df_responses %>% 
+  filter(source == 'human') %>% 
+  group_by(pid, graph_type, edge) %>% 
+  arrange(obs_index) %>% 
+  mutate(prev = lag(response, default = 'none')) %>% 
+  ungroup() %>% 
+  mutate(prev_correct = prev == actual,
+         change = response != prev,
+         c2i = prev_correct & !correct,
+         i2c = !prev_correct & correct,
+         i2i = change & !prev_correct & !correct) %>% 
+  pivot_longer(c(c2i, i2c, i2i),
+               names_to = 'change_type',
+               values_to = 'changed')
+
+df %>% 
+  filter(change_type == 'c2i') %>% 
+  glmer(changed ~ condition + (1 | pid),
+        family = 'binomial',
+        data = .) %>% 
+  emmeans(specs = pairwise ~ condition,
+          adjust = "none")
+```
+
+```{r}
+df %>% 
+  group_by(condition, change_type) %>% 
+  summarize(mean = mean(changed))
+```
+
+# Interpreting explanations
+```{r}
+df_xp = df_explanations %>%
+  left_join(df_responses) %>% 
+  filter(condition != 'activations') %>% 
+  group_by(pid, source, graph_type, edge) %>% 
+  mutate(prev = lag(response, default = 'none')) %>% 
+  ungroup() %>% 
+  mutate(changed = prev != response)
+```
+
+
+## Explained edge
+
+### Bootstrap
+```{r}
+num_sims = 2000
+
+df_explained = df_xp %>% 
+  filter(edge == xedge) %>% 
+  mutate(xdirection = ifelse(xforward, 'forward', 'backward'),
+         xalign_prev = case_when(prev == 'none' ~ 'none',
+                                 prev == xdirection ~ 'same',
+                                 T ~ 'reversed'),
+         xalign = case_when(response == 'none' ~ 'none',
+                            response == xdirection ~ 'same',
+                            T ~ 'reversed')) %>% 
+  group_by(source, condition, xcause, xactive, xalign_prev) 
+
+df_explained = tibble(sim = 1:num_sims) %>% 
+  mutate(data = future_map(sim, 
+                           ~ df_explained %>% 
+                             sample_frac(1, replace=TRUE) %>% 
+                             group_by(source, condition, xcause, xactive, xalign_prev, xalign) %>% 
+                             summarize(n = n(), .groups = 'drop_last') %>% 
+                             mutate(total = sum(n),
+                                    f = n / total),
+                           .options = furrr_options(seed = T),
+                           .progress = T)) %>% 
+  unnest(data)
+```
+
+```{r}
+df_explained %>% 
+  group_by(sim, source, condition, xcause, xalign) %>% 
+  summarize(f = sum(n) / sum(total)) %>% 
+  group_by(source, condition, xcause, xalign) %>% 
+  summarize(estimate = mean(f),
+            ci_low = quantile(f, .025),
+            ci_high = quantile(f, .975)) %>% 
+  ungroup() %>% 
+  filter(!xcause,
+         xalign != 'same',
+         source == 'human')
+```
+
+
+### Plot
+```{r}
+df_explained %>% 
+  group_by(sim, source, condition, xcause, xactive, xalign) %>% 
+  summarize(f = sum(n) / sum(total)) %>% 
+  group_by(source, condition, xcause, xalign, xactive) %>% 
+  summarize(estimate = mean(f),
+            ci_low = quantile(f, .025),
+            ci_high = quantile(f, .975)) %>% 
+  ungroup() %>% 
+  filter(!xcause,
+         xalign != 'same') %>% 
+  mutate(xactive = ifelse(xactive, "Factual", "Counterfactual") %>%
+           factor(c("Factual", 'Counterfactual')),
+         source = ifelse(source == 'human', 'Human', 'Model'),
+         xalign = ifelse(xalign == 'none', 'No Connection', 'Reverse Connection'),
+         condition = ifelse(condition == 'explanations', 'Explanation Only', 'Observation + Explanation')) %>% 
+  filter(source == 'Human') %>%
+  ggplot(aes(x = xactive,
+             y = estimate,
+             fill = xalign)) +
+  geom_bar(position = position_dodge2(width = .9),
+           stat = "identity",
+           color = 'black',
+           alpha = .75) +
+  geom_errorbar(aes(ymin=ci_low, ymax=ci_high),
+                width=0,
+                position=position_dodge(.9)) + 
+  scale_x_discrete(labels=c('Factual'=TeX("Factual$^-$"),
+                            'Counterfactual'=TeX("Counterfactual$^-$"))) +
+  scale_fill_manual(name="", 
+                    values=miscPalette) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(~condition) +
+  labs(x = element_blank(),
+       y = "Proportion of Responses") +
+  theme(legend.title = element_blank(),
+        panel.grid.major.x = element_blank())
+
+ggsave("../../figures/explained_edge.png", width = 6, height = 4)
+```
+
+## Unexplained edges
+
+Create DF involving edges that weren't in the explanation.
+For these edges, did the responses point to or away from the nodes in explanation, or
+no connection?
+
+### Bootstrap
+
+```{r}
+num_samples = 2000
+
+# Assume explanation is X -> Y
+df_unexplained = df_explanations %>%
+  left_join(df_responses) %>% 
+  filter(condition != 'activations',
+         edge != xedge) %>% 
+  mutate(
+    # non-explanation edge with X
+    edge1 = case_when(xedge == 'ab' & xforward ~ 'ac', 
+                      xedge == 'ab' & !xforward ~ 'bc',
+                      xedge == 'ac' & xforward ~ 'ab',
+                      xedge == 'ac' & !xforward ~ 'bc',
+                      xedge == 'bc' & xforward ~ 'ab',
+                      T ~ 'ac'),
+    # non-explanation edge with Y
+    edge2 = case_when(xedge == 'ab' & xforward ~ 'bc',
+                      xedge == 'ab' & !xforward ~ 'ac',
+                      xedge == 'ac' & xforward ~ 'bc',
+                      xedge == 'ac' & !xforward ~ 'ab',
+                      xedge == 'bc' & xforward ~ 'ac',
+                      T ~ 'ab')) %>% 
+  mutate(edge1 = edge1 == edge,
+         edge2 = edge2 == edge) %>% 
+  mutate(
+    # which node is participant's response pointing to
+    pointing_to = case_when(response == 'none' ~ 'none', 
+                            response == 'forward' ~ substr(edge, 2, 2),
+                            T ~ substr(edge, 1, 1)),
+    xnode1 = tolower(xnode1),
+    xnode2 = tolower(xnode2),
+    # is participant's response pointing to the node in explanation
+    direction = case_when(response == 'none' ~ 'none', 
+                          edge1 & pointing_to == xnode1 ~ 'to_xnode',
+                          edge1 & pointing_to != xnode1 ~ 'from_xnode',
+                          edge2 & pointing_to == xnode2 ~ 'to_xnode',
+                          edge2 & pointing_to != xnode2 ~ 'from_xnode',
+                          T ~ 'error')) %>% 
+  select(source, condition, xactive, xcause, edge1, edge2, direction) %>% 
+  mutate(edge = ifelse(edge1, 'edge1', 'edge2'))
+
+df_unexplained = tibble(sim = 1:num_sims) %>% 
+  mutate(data = future_map(sim, 
+                           ~ df_unexplained %>% 
+                             sample_frac(1, replace=TRUE) %>% 
+                             group_by(source, condition, xcause, xactive, edge, direction) %>% 
+                             summarize(n = n(), .groups = 'drop_last') %>% 
+                             mutate(total = sum(n),
+                                    f = n / total),
+                           .options = furrr_options(seed = T),
+                           .progress = T)) %>% 
+  unnest(data)
+```
+
+### Plot
+
+```{r}
+df_unexplained %>% 
+  filter(!xcause) %>% 
+  group_by(sim, source, xcause, edge, direction) %>% 
+  summarize(n = sum(n),
+            total = sum(total),
+            f = n / total) %>% 
+  group_by(source, xcause, edge, direction) %>% 
+  summarize(estimate = mean(f),
+            ci_low = quantile(f, .025),
+            ci_high = quantile(f, .975)) %>% 
+  ungroup() %>% 
+  filter(direction != 'none') %>% 
+  mutate(edge = ifelse(edge == 'edge1', "X", "Y"),
+         direction = ifelse(direction == 'from_xnode', 'From Component', 'To Component'),
+         source = ifelse(source == 'human', 'Human', 'Model')) %>%
+  ggplot(aes(x = edge,
+             y = estimate,
+             fill = direction)) +
+  geom_bar(position = position_dodge2(width = .9),
+           stat = "identity",
+           alpha = .75,
+           color = 'black') +
+  geom_errorbar(aes(ymin=ci_low, ymax=ci_high),
+                width=0,
+                position=position_dodge(.9)) + 
+  scale_fill_manual(name="", 
+                    values=miscPalette) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(~source) +
+  labs(x = element_blank(),
+       y = "Proportion of Responses") +
+  theme(legend.title = element_blank(),
+        panel.grid.major.x = element_blank())
+
+ggsave("../../figures/unexplained_edge.png", width = 6, height = 4)
+```

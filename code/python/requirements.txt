@@ -1,0 +1,17 @@
+numpy
+pandas
+tqdm
+scikit-learn
+matplotlib
+ipython
+jupyterlab
+ipywidgets
+hydra-core
+omegaconf
+networkx
+pygraphviz
+frozendict
+flask
+flask_restful
+flask_cors
+discrete-probabilistic-model

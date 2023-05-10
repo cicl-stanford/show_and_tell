@@ -1,0 +1,18 @@
+# Use url-param 'devmode=true' to enable developer mode.
+experiment_name: exp1
+
+# host_url: 54.219.82.44          # The AWS public IP
+host_url: localhost             # The AWS public IP
+flask_port: 5001
+react_port: 3000
+post_data_interval: 60000         # interval to periodically post data to server, in milliseconds
+
+completion_code: CJETWGMX
+appx_duration: 25                 # approximately how long the study will take (in minutes)
+base_reward: 4.15
+reward_per_edge: 0.03
+
+num_observations: 10  # number of observations per device
+p_root: 0.5           # probability that a root node activates
+p_nonroot: 0.1        # probability that a non-root node activates
+p_edge: 0.9           # probability that an edge activates

@@ -1,0 +1,163 @@
+{
+    "graph_type": "pair",
+    "edges":
+    [
+        [
+            "B",
+            "A"
+        ]
+    ],
+    "observations":
+    [
+        {
+            "activations":
+            {
+                "B": true,
+                "A": true,
+                "C": false
+            },
+            "explanation":
+            {
+                "node1": "B",
+                "node2": "A",
+                "nodes_active": true,
+                "cause": true
+            }
+        },
+        {
+            "activations":
+            {
+                "B": false,
+                "A": false,
+                "C": true
+            },
+            "explanation":
+            {
+                "node1": "B",
+                "node2": "A",
+                "nodes_active": false,
+                "cause": true
+            }
+        },
+        {
+            "activations":
+            {
+                "B": false,
+                "A": false,
+                "C": false
+            },
+            "explanation":
+            {
+                "node1": "C",
+                "node2": "B",
+                "nodes_active": false,
+                "cause": false
+            }
+        },
+        {
+            "activations":
+            {
+                "B": true,
+                "A": true,
+                "C": false
+            },
+            "explanation":
+            {
+                "node1": "A",
+                "node2": "B",
+                "nodes_active": true,
+                "cause": false
+            }
+        },
+        {
+            "activations":
+            {
+                "B": true,
+                "A": true,
+                "C": false
+            },
+            "explanation":
+            {
+                "node1": "B",
+                "node2": "A",
+                "nodes_active": true,
+                "cause": true
+            }
+        },
+        {
+            "activations":
+            {
+                "B": false,
+                "A": false,
+                "C": true
+            },
+            "explanation":
+            {
+                "node1": "B",
+                "node2": "A",
+                "nodes_active": false,
+                "cause": true
+            }
+        },
+        {
+            "activations":
+            {
+                "B": false,
+                "A": false,
+                "C": true
+            },
+            "explanation":
+            {
+                "node1": "B",
+                "node2": "A",
+                "nodes_active": false,
+                "cause": true
+            }
+        },
+        {
+            "activations":
+            {
+                "B": true,
+                "A": false,
+                "C": false
+            },
+            "explanation":
+            {
+                "node1": "C",
+                "node2": "A",
+                "nodes_active": false,
+                "cause": false
+            }
+        },
+        {
+            "activations":
+            {
+                "B": false,
+                "A": false,
+                "C": false
+            },
+            "explanation":
+            {
+                "node1": "A",
+                "node2": "B",
+                "nodes_active": false,
+                "cause": false
+            }
+        },
+        {
+            "activations":
+            {
+                "B": true,
+                "A": true,
+                "C": false
+            },
+            "explanation":
+            {
+                "node1": "A",
+                "node2": "B",
+                "nodes_active": true,
+                "cause": false
+            }
+        }
+    ]
+}

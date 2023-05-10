@@ -1,0 +1,9 @@
+**/node_modules/
+**/.ipynb_checkpoints/
+**/temp/
+.DS_Store
+*.pyc
+.Rproj.user
+.idea
+.Rhistory
+experiments/exp1/reactapp/public/config.json
