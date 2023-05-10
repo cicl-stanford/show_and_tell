@@ -118,7 +118,7 @@ export function getUrlParams() {
  * @param filename
  */
 export function loadJSON(filename: string) {
-  filename = process.env.PUBLIC_URL + filename;
+  filename = process.env.PUBLIC_URL + '/' + filename;
   return new Promise(resolve => {
     fetch(filename)
       .then(response => response.json())

@@ -1,9 +1,11 @@
 **/node_modules/
 **/.ipynb_checkpoints/
 **/temp/
+**/build/
 .DS_Store
 *.pyc
 .Rproj.user
 .idea
 .Rhistory
 experiments/exp1/reactapp/public/config.json
+code/experiment/public/config.json
