@@ -3,7 +3,7 @@ experiment_name: exp1
 
 host_url: http://ec2-18-144-27-241.us-west-1.compute.amazonaws.com          # The AWS public IP
 # host_url: localhost             # The AWS public IP
-flask_port: 5000
+flask_port: 5001
 react_port: 3000
 post_data_interval: 60000         # interval to periodically post data to server, in milliseconds
 

@@ -9,7 +9,6 @@ ipywidgets
 hydra-core
 omegaconf
 networkx
-pygraphviz
 frozendict
 flask
 flask_restful
